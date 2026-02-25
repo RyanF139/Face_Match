@@ -1,15 +1,14 @@
+version: "3.9"
+
 services:
   face-api:
     build: .
     container_name: face_match_api
     restart: always
-
     ports:
       - "18000:8000"
-
     env_file:
       - /opt/config/face-match/.env
-
     volumes:
       - ./face_library:/app/face_library
       - ./db.json:/app/db.json
