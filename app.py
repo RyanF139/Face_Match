@@ -6,9 +6,18 @@ import shutil
 import cv2
 import numpy as np
 import insightface
+from dotenv import load_dotenv
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Query, Request
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
+
+load_dotenv()
+
+FACE_LIB_PATH = os.getenv("FACE_LIB_PATH", "face_library")
+DB_FILE = os.getenv("DB_FILE", "db.json")
+THRESHOLD = float(os.getenv("THRESHOLD", 0.4))
+MODEL_NAME = os.getenv("MODEL_NAME", "buffalo_l")
+MODEL_CTX = int(os.getenv("MODEL_CTX", -1))
 
 FACE_LIB_PATH = "face_library"
 os.makedirs(FACE_LIB_PATH, exist_ok=True)
@@ -26,9 +35,8 @@ DB_FILE = "db.json"
 THRESHOLD = 0.4  # realistis untuk buffalo_l
 
 # ================= LOAD MODEL =================
-model = insightface.app.FaceAnalysis(name="buffalo_l")
-model.prepare(ctx_id=-1)
-
+model = insightface.app.FaceAnalysis(name=MODEL_NAME)
+model.prepare(ctx_id=MODEL_CTX)
 # ================= DATABASE =================
 def load_db():
     if not os.path.exists(DB_FILE):

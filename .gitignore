@@ -2,3 +2,6 @@ app.bac
 venv
 w600k_r50.onnx
 face_library
+models
+db.json
+__pycache__
