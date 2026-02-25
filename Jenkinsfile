@@ -2,12 +2,12 @@ pipeline {
     agent { label 'built-in' }
 
     environment {
-        REPO_URL = 'https://github.com/RyanF139/Face_Capture.git'
+        REPO_URL = 'https://github.com/RyanF139/Face_Match.git'
         BRANCH = 'main'
-        ENV_SOURCE = '/opt/config/face_capture/.env'
+        ENV_SOURCE = '/opt/config/face_match/.env'
 
-        APP_NAME = 'face-capture'
-        IMAGE_NAME = 'face-capture'
+        APP_NAME = 'face-match'
+        IMAGE_NAME = 'face-match-app'
         IMAGE_TAG = 'latest'
         FULL_IMAGE = "${IMAGE_NAME}:${IMAGE_TAG}"
         DOCKER_NETWORK = 'shared_network'
