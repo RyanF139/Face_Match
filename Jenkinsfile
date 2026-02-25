@@ -4,7 +4,7 @@ pipeline {
     environment {
         REPO_URL = 'https://github.com/RyanF139/Face_Match.git'
         BRANCH = 'main'
-        ENV_SOURCE = '/opt/config/face_match/.env'
+        ENV_SOURCE = '/opt/config/face-match/.env'
 
         APP_NAME = 'face-match'
         IMAGE_NAME = 'face-match-app'
