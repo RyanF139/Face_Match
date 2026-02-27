@@ -27,9 +27,11 @@ app.mount("/face_library", StaticFiles(directory="face_library"), name="face_lib
 
 class UpdateFolderRequest(BaseModel):
     name: str
+    fdid: str
 
 class CreateFolderRequest(BaseModel):
     name: str
+    fdid: str 
 
 DB_FILE = "db.json"
 THRESHOLD = 0.4  # realistis untuk buffalo_l
@@ -193,14 +195,17 @@ async def register_person(
 # ================= RECOGNIZE =================
 @app.post("/recognize")
 async def recognize(file: UploadFile = File(...)):
-
     db = load_db()
-
     if len(db) == 0:
-        return {"error": "Database empty"}
+        return {"status": "error", "message": "Database empty"}
 
     image_bytes = await file.read()
-    emb = get_embedding(image_bytes)
+
+    try:
+        emb = get_embedding(image_bytes)
+    except ValueError as e:
+        # jika gambar tidak ada wajah
+        return {"status": "error", "message": str(e)}
 
     best_match = None
     best_score = -1
@@ -208,7 +213,6 @@ async def recognize(file: UploadFile = File(...)):
     best_fdid = None
 
     for name, data in db.items():
-
         embeddings = data.get("embeddings")
         fpid = data.get("fpid")
         fdid = data.get("fdid")
@@ -217,10 +221,8 @@ async def recognize(file: UploadFile = File(...)):
             continue
 
         for stored_embedding in embeddings:
-
             stored = np.array(stored_embedding, dtype=np.float32)
             stored = stored / np.linalg.norm(stored)
-
             score = float(np.dot(emb, stored))
 
             if score > best_score:
@@ -233,7 +235,9 @@ async def recognize(file: UploadFile = File(...)):
     threshold_percent = (THRESHOLD + 1) / 2 * 100
 
     if best_score > THRESHOLD:
+        # match ditemukan
         return {
+            "status": "success",
             "match": best_match,
             "fpid": best_fpid,
             "fdid": best_fdid,
@@ -243,8 +247,10 @@ async def recognize(file: UploadFile = File(...)):
             "threshold_percent": round(threshold_percent, 2)
         }
 
+    # tidak ada match yang memenuhi threshold
     return {
-        "match": None,
+        "status": "no_match",
+        "message": "No matching face found in the database",
         "cosine_score": round(best_score, 4),
         "similarity_percent": round(percentage, 2),
         "threshold_cosine": THRESHOLD,
@@ -546,8 +552,20 @@ def create_facelib(request: CreateFolderRequest):
                         detail=f"Folder dengan nama '{request.name}' sudah ada"
                     )
 
-        # Generate UUID
-        fdid = str(uuid.uuid4())
+        if request.fdid == "" or request.fdid == "string" or request.fdid is None:
+            # Generate UUID
+            fdid = str(uuid.uuid4())
+        else:
+            print("ADADADADA")
+            fdid = str(request.fdid.strip())
+
+            # Cek apakah FDID sudah ada
+            for folder in os.listdir(FACE_LIB_PATH):
+                if folder.startswith(fdid + "_"):
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Folder dengan FDID '{fdid}' sudah ada"
+                    )
 
         folder_name = f"{fdid}_{safe_name}"
         folder_path = os.path.join(FACE_LIB_PATH, folder_name)
