@@ -41,8 +41,6 @@ class CreateFolderRequest(BaseModel):
     name: str
     fdid: str 
 
-DB_FILE = "db.json"
-THRESHOLD = 0.4  # realistis untuk buffalo_l
 
 # ================= LOAD MODEL =================
 model = insightface.app.FaceAnalysis(name=MODEL_NAME)
@@ -51,8 +49,15 @@ model.prepare(ctx_id=MODEL_CTX)
 def load_db():
     if not os.path.exists(DB_FILE):
         return {}
-    with open(DB_FILE, "r") as f:
-        return json.load(f)
+
+    try:
+        with open(DB_FILE, "r") as f:
+            content = f.read().strip()
+            if not content:
+                return {}
+            return json.loads(content)
+    except json.JSONDecodeError:
+        return {}
 
 def save_db(db):
     with open(DB_FILE, "w") as f:
