@@ -6,6 +6,7 @@ import shutil
 import cv2
 import numpy as np
 import insightface
+import logging
 from dotenv import load_dotenv
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Query, Request
 from fastapi.staticfiles import StaticFiles
@@ -24,6 +25,13 @@ os.makedirs(FACE_LIB_PATH, exist_ok=True)
 
 app = FastAPI()
 app.mount("/face_library", StaticFiles(directory="face_library"), name="face_library")
+
+logging.basicConfig(
+    level=logging.INFO,  # Bisa ganti ke DEBUG kalau mau detail
+    format="%(asctime)s | %(levelname)s | %(name)s | %(message)s"
+)
+
+logger = logging.getLogger("face_api")
 
 class UpdateFolderRequest(BaseModel):
     name: str
@@ -50,21 +58,21 @@ def save_db(db):
     with open(DB_FILE, "w") as f:
         json.dump(db, f)
 
-# ================= GENERATE FPID =================
-def generate_fpid(db):
-    if len(db) == 0:
-        return "FP0001"
+# # ================= GENERATE FPID =================
+# def generate_fpid(db):
+#     if len(db) == 0:
+#         return "FP0001"
 
-    numbers = []
-    for person in db.values():
-        if isinstance(person, dict) and "fpid" in person:
-            numbers.append(int(person["fpid"].replace("FP", "")))
+    # numbers = []
+    # for person in db.values():
+    #     if isinstance(person, dict) and "fpid" in person:
+    #         numbers.append(int(person["fpid"].replace("FP", "")))
 
-    if not numbers:
-        return "FP0001"
+    # if not numbers:
+    #     return "FP0001"
 
-    new_id = max(numbers) + 1
-    return f"FP{str(new_id).zfill(4)}"
+    # new_id = max(numbers) + 1
+    # return f"FP{str(new_id).zfill(4)}"
 
 # ================= EMBEDDING =================
 def get_embedding(image_bytes):
@@ -74,7 +82,6 @@ def get_embedding(image_bytes):
 
     if img is None:
         raise ValueError("Image decode failed")
-
     faces = model.get(img)
 
     if len(faces) == 0:
@@ -91,6 +98,7 @@ def get_embedding(image_bytes):
 def cosine_similarity(a, b):
     return float(np.dot(a, b))
 
+
 # ================= REGISTER =================
 @app.post("/register")
 async def register_person(
@@ -106,15 +114,18 @@ async def register_person(
     fpid = fpid.strip() if fpid else None
 
     if not name:
+        logger.warning("Attempted registration with Name is required.")
         return {"status": "error", "message": "Name is required"}
 
     if not fdid:
+        logger.warning("Attempted registration with FDID is required.")
         return {"status": "error", "message": "FDID is required"}
 
     db = load_db()
 
     # ================= VALIDASI NAMA =================
     if name in db:
+        logger.warning(f"Attempted registration with duplicate name: {name}")
         return {
             "status": "error",
             "message": "person already registered",
@@ -131,6 +142,7 @@ async def register_person(
             break
 
     if not face_folder:
+        logger.warning(f"Attempted registration with non-existent FDID: {fdid}")
         return {
             "status": "error",
             "message": "FDID folder not found",
@@ -141,11 +153,14 @@ async def register_person(
 
     # ================= GENERATE FPID JIKA KOSONG =================
     if fpid == "string" or not fpid:
-        fpid = generate_fpid(db)
+        fpid = str(uuid.uuid4())
+    else:
+        fpid = fpid.strip()
 
     # ================= VALIDASI FPID DUPLICATE =================
     for person in db.values():
         if person.get("fpid") == fpid:
+            logger.warning(f"Attempted registration with duplicate FPID: {fpid}")
             return {
                 "status": "error",
                 "message": "FPID already exists",
@@ -164,10 +179,12 @@ async def register_person(
     img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
 
     if img is None:
+        logger.error("Image decode failed during registration")
         return {"error": "Image decode failed"}
 
     faces = model.get(img)
     if len(faces) == 0:
+        logger.error("No face detected during registration")
         return {"error": "No face detected"}
 
     embeddings = [faces[0].embedding]
@@ -185,6 +202,8 @@ async def register_person(
 
     save_db(db)
 
+    logger.info(f"Registered new person: {name} with FPID: {fpid} in FDID: {fdid}")
+
     return {
         "status": "registered",
         "name": name,
@@ -197,6 +216,7 @@ async def register_person(
 async def recognize(file: UploadFile = File(...)):
     db = load_db()
     if len(db) == 0:
+        logger.warning("Recognition attempt with empty database")
         return {"status": "error", "message": "Database empty"}
 
     image_bytes = await file.read()
@@ -205,6 +225,7 @@ async def recognize(file: UploadFile = File(...)):
         emb = get_embedding(image_bytes)
     except ValueError as e:
         # jika gambar tidak ada wajah
+        logger.error(f"Recognition error: {str(e)}")
         return {"status": "error", "message": str(e)}
 
     best_match = None
@@ -236,6 +257,7 @@ async def recognize(file: UploadFile = File(...)):
 
     if best_score > THRESHOLD:
         # match ditemukan
+        logger.info(f"Recognition success: {best_match} with FPID: {best_fpid} in FDID: {best_fdid} | Cosine Score: {best_score:.4f} | Similarity: {percentage:.2f}%")
         return {
             "status": "success",
             "match": best_match,
@@ -248,6 +270,7 @@ async def recognize(file: UploadFile = File(...)):
         }
 
     # tidak ada match yang memenuhi threshold
+    logger.info(f"Recognition no match | Best Score: {best_score:.4f} | Similarity: {percentage:.2f}% | Threshold: {THRESHOLD:.4f}")
     return {
         "status": "no_match",
         "message": "No matching face found in the database",
@@ -263,6 +286,7 @@ async def get_persons_all(request: Request):
     db = load_db()
 
     if len(db) == 0:
+        logger.warning("Attempted to retrieve persons list but database is empty")
         return {
             "total": 0,
             "persons": []
@@ -291,7 +315,7 @@ async def get_persons_all(request: Request):
                     if filename.startswith(f"{fpid}_"):
                         image_url = f"{base_url}/face_library/{folder}/{filename}"
                         break
-
+        logger.info(f"Retrieved person: {name} with FPID: {fpid} in FDID: {fdid} | Image URL: {image_url}")
         persons.append({
             "name": name,
             "fpid": fpid,
@@ -315,7 +339,7 @@ def get_list_persons_by_fdid(fdid: str):
     for name, data in db.items():
 
         if data.get("fdid") == fdid:
-
+            logger.info(f"Found person: {name} with FPID: {data.get('fpid')} in FDID: {fdid}")
             persons.append({
                 "name": name,
                 "fpid": data.get("fpid"),
@@ -324,11 +348,12 @@ def get_list_persons_by_fdid(fdid: str):
             })
 
     if not persons:
+        logger.warning(f"No persons found for FDID: {fdid}")
         raise HTTPException(
             status_code=404,
             detail="No persons found for this FDID"
         )
-
+    logger.info(f"Total persons found for FDID {fdid}: {len(persons)}")
     return {
         "fdid": fdid,
         "total": len(persons),
@@ -342,12 +367,13 @@ async def get_person_by_fpid(fpid: str):
 
     for name, data in db.items():
         if data.get("fpid") == fpid:
+            logger.info(f"Found person: {name} with FPID: {fpid} in FDID: {data.get('fdid')}")
             return {
                 "name": name,
                 "fpid": fpid,
                 "embedding_count": len(data.get("embeddings", []))
             }
-
+    logger.warning(f"Person not found with FPID: {fpid}")
     return {
         "status": "error",
         "message": "person not found",
@@ -374,10 +400,12 @@ async def edit_person(
             break
 
     if target_name is None:
+        logger.warning(f"Attempted to edit person with non-existent FPID: {fpid}")
         raise HTTPException(status_code=404, detail="Person not found")
 
     # ================= UPDATE NAMA =================
-    if new_name == "string" or new_name is None:
+    if new_name == "string" or new_name is None: 
+        logger.warning(f"Attempted to update person with FPID: {fpid} but new name is invalid")
         return {
             "status": "error",
             "message": "New name is required",
@@ -385,6 +413,7 @@ async def edit_person(
         }
     else:
         if new_name != target_name and new_name in db:
+            logger.warning(f"Attempted to update person with FPID: {fpid} to duplicate name: {new_name}")
             raise HTTPException(status_code=400, detail="New name already exists")
 
         db[new_name] = db.pop(target_name)
@@ -398,10 +427,12 @@ async def edit_person(
         img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
 
         if img is None:
+            logger.error(f"Image decode failed during update for FPID: {fpid}")
             raise HTTPException(status_code=400, detail="Image decode failed")
 
         faces = model.get(img)
         if len(faces) == 0:
+            logger.error(f"No face detected during update for FPID: {fpid}")
             raise HTTPException(status_code=400, detail="No face detected")
 
         embeddings = []
@@ -467,7 +498,7 @@ async def edit_person(
 
                 break
     save_db(db)
-
+    logger.info(f"Updated person with FPID: {fpid} | New Name: {target_name} | Image Updated: {'Yes' if file else 'No'}")
     return {
         "status": "success",
         "message": "person updated",
@@ -489,6 +520,7 @@ async def delete_person_by_fpid(fpid: str):
             break
 
     if target_name is None:
+        logger.warning(f"Attempted to delete person with non-existent FPID: {fpid}")   
         raise HTTPException(status_code=404, detail="Person not found")
 
     # ================= HAPUS FILE IMAGE =================
@@ -509,7 +541,7 @@ async def delete_person_by_fpid(fpid: str):
     # ================= HAPUS DARI DB =================
     del db[target_name]
     save_db(db)
-
+    logger.info(f"Deleted person with FPID: {fpid} | Name: {target_name} | FDID: {fdid}")
     return {
         "status": "success",
         "message": "person deleted",
@@ -517,11 +549,12 @@ async def delete_person_by_fpid(fpid: str):
         "fpid": fpid
     }
 
+
 @app.get("/percent-to-cosine")
 async def conversion_similarity(percent: float = Query(..., ge=0, le=100)):
 
     cosine = (percent / 100) * 2 - 1
-
+    logger.info(f"Converted percent: {percent}% to cosine similarity: {cosine:.6f}")
     return {
         "input_percent": percent,
         "cosine_value": round(cosine, 6)
@@ -533,7 +566,7 @@ def create_facelib(request: CreateFolderRequest):
     os.makedirs(FACE_LIB_PATH, exist_ok=True)
 
     if request.name == "" or request.name == "string" or request.name is None:
-
+        logger.warning("Attempted to create face library folder with invalid name")
         raise HTTPException(
             status_code=400,
             detail="Nama folder tidak boleh kosong"
@@ -547,6 +580,7 @@ def create_facelib(request: CreateFolderRequest):
             if "_" in folder:
                 existing_name = folder.split("_", 1)[1]
                 if existing_name.lower() == safe_name.lower():
+                    logger.warning(f"Attempted to create face library folder with duplicate name: {request.name}")
                     raise HTTPException(
                         status_code=400,
                         detail=f"Folder dengan nama '{request.name}' sudah ada"
@@ -556,12 +590,12 @@ def create_facelib(request: CreateFolderRequest):
             # Generate UUID
             fdid = str(uuid.uuid4())
         else:
-            print("ADADADADA")
             fdid = str(request.fdid.strip())
 
             # Cek apakah FDID sudah ada
             for folder in os.listdir(FACE_LIB_PATH):
                 if folder.startswith(fdid + "_"):
+                    logger.warning(f"Attempted to create face library folder with duplicate FDID: {fdid}")
                     raise HTTPException(
                         status_code=400,
                         detail=f"Folder dengan FDID '{fdid}' sudah ada"
@@ -572,6 +606,7 @@ def create_facelib(request: CreateFolderRequest):
 
         os.makedirs(folder_path)
 
+        logger.info(f"Created new face library folder: {folder_name} with FDID: {fdid} and Name: {request.name} folder_name: {folder_name} folder_path: {folder_path}   ") 
         return {
             "status": "success",
             "fdid": fdid,
@@ -584,6 +619,7 @@ def create_facelib(request: CreateFolderRequest):
 def get_list_facelib():
 
     if not os.path.exists(FACE_LIB_PATH):
+        logger.warning("Attempted to list face library folders but face library path does not exist")
         return {
             "total": 0,
             "folders": []
@@ -605,6 +641,7 @@ def get_list_facelib():
                 if os.path.isfile(os.path.join(folder_path, f))
             )
 
+            logger.info(f"Found face library folder: {folder} with FDID: {fdid}, Name: {name}, File Count: {file_count}, Path: {folder_path}")
             folders_data.append({
                 "fdid": fdid,
                 "name": name,
@@ -612,7 +649,7 @@ def get_list_facelib():
                 "file_count": file_count,
                 "folder_path": folder_path
             })
-
+    logger.info(f"Total face library folders found: {len(folders_data)}")
     return {
         "total": len(folders_data),
         "folders": folders_data
@@ -623,6 +660,7 @@ def get_list_facelib():
 def get_facelib_by_fdid(fdid: str):
 
     if not os.path.exists(FACE_LIB_PATH):
+        logger.warning(f"Attempted to retrieve face library folder with FDID: {fdid} but face library path does not exist")
         raise HTTPException(status_code=404, detail="Face library not found")
 
     for folder in os.listdir(FACE_LIB_PATH):
@@ -640,7 +678,7 @@ def get_facelib_by_fdid(fdid: str):
                 f for f in os.listdir(folder_path)
                 if os.path.isfile(os.path.join(folder_path, f))
             ]
-
+            logger.info(f"Retrieved face library folder with FDID: {fdid} | Name: {name} | File Count: {len(files)} | Path: {folder_path}")
             return {
                 "fdid": fdid,
                 "name": name,
@@ -649,7 +687,7 @@ def get_facelib_by_fdid(fdid: str):
                 "files": files,
                 "folder_path": folder_path
             }
-
+    logger.warning(f"Face library folder not found with FDID: {fdid}")
     raise HTTPException(status_code=404, detail="FDID not found")
 
 
@@ -657,10 +695,11 @@ def get_facelib_by_fdid(fdid: str):
 def update_facelib(fdid: str, request: UpdateFolderRequest):
 
     if not os.path.exists(FACE_LIB_PATH):
+        logger.warning(f"Attempted to update face library folder with FDID: {fdid} but face library path does not exist")
         raise HTTPException(status_code=404, detail="Face library not found")
 
     if request.name == "" or request.name == "string" or  request.name is None:
-
+        logger.warning(f"Attempted to update face library folder with FDID: {fdid} but new name is invalid")
         raise HTTPException(
             status_code=400,
             detail="Nama folder tidak boleh kosong"
@@ -678,6 +717,7 @@ def update_facelib(fdid: str, request: UpdateFolderRequest):
                 break
 
         if not old_folder_name:
+            logger.warning(f"Attempted to update face library folder with FDID: {fdid} but folder not found")
             raise HTTPException(status_code=404, detail="FDID not found")
 
         # Cek duplicate name
@@ -685,6 +725,7 @@ def update_facelib(fdid: str, request: UpdateFolderRequest):
             if "_" in folder:
                 _, existing_name = folder.split("_", 1)
                 if existing_name.lower() == safe_name.lower():
+                    logger.warning(f"Attempted to update face library folder with FDID: {fdid} to duplicate name: {request.name}")
                     raise HTTPException(
                         status_code=400,
                         detail="Nama folder sudah digunakan"
@@ -697,6 +738,7 @@ def update_facelib(fdid: str, request: UpdateFolderRequest):
 
         os.rename(old_path, new_path)
 
+        logger.info(f"Updated face library folder with FDID: {fdid} | Old Name: {old_folder_name.split('_', 1)[1]} | New Name: {request.name} | New Folder Name: {new_folder_name}")
         return {
             "status": "success",
             "fdid": fdid,
@@ -709,6 +751,7 @@ def update_facelib(fdid: str, request: UpdateFolderRequest):
 def delete_facelib(fdid: str):
 
     if not os.path.exists(FACE_LIB_PATH):
+        logger.warning(f"Attempted to delete face library folder with FDID: {fdid} but face library path does not exist")
         raise HTTPException(status_code=404, detail="Face library not found")
 
     for folder in os.listdir(FACE_LIB_PATH):
@@ -733,11 +776,11 @@ def delete_facelib(fdid: str):
                     del db[name]
 
                 save_db(db)
-
+                logger.info(f"Deleted face library folder with FDID: {fdid} | Folder Name: {folder} | Deleted Persons Count: {len(to_delete)}")
                 return {
                     "status": "success",
                     "fdid": fdid,
                     "deleted_folder": folder
                 }
-
+    logger.warning(f"Attempted to delete face library folder with FDID: {fdid} but folder not found")
     raise HTTPException(status_code=404, detail="FDID not found")
