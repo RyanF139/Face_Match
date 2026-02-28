@@ -10,7 +10,11 @@ pipeline {
         IMAGE_NAME = 'face-match-app'
         IMAGE_TAG = 'latest'
         FULL_IMAGE = "${IMAGE_NAME}:${IMAGE_TAG}"
-        DOCKER_NETWORK = 'shared_network'
+
+        DATA_ROOT = '/opt/data/face-match'
+        FACE_LIB_PATH = '/opt/data/face-match/face_library'
+        DB_PATH = '/opt/data/face-match/db.json'
+        BACKUP_PATH = '/opt/data/face-match/backup'
     }
 
     stages {
@@ -28,6 +32,33 @@ pipeline {
                 sh '''
                 echo "Copying .env file..."
                 cp $ENV_SOURCE .env
+                '''
+            }
+        }
+
+        stage('Prepare Persistent Storage') {
+            steps {
+                sh '''
+                echo "Preparing persistent storage..."
+
+                mkdir -p $FACE_LIB_PATH
+                mkdir -p $BACKUP_PATH
+
+                if [ ! -f $DB_PATH ]; then
+                    echo "{}" > $DB_PATH
+                fi
+                '''
+            }
+        }
+
+        stage('Backup Database') {
+            steps {
+                sh '''
+                echo "Creating database backup..."
+
+                if [ -f $DB_PATH ]; then
+                    cp $DB_PATH $BACKUP_PATH/db_$(date +%F_%H-%M-%S).json
+                fi
                 '''
             }
         }
@@ -59,24 +90,23 @@ pipeline {
                 docker run -d \
                   --name $APP_NAME \
                   --env-file .env \
-                  -v $(pwd)/image_face:/app/image_face \
+                  -v $FACE_LIB_PATH:/app/face_library \
+                  -v $DB_PATH:/app/db.json \
                   -p 8000:8000 \
                   --restart=always \
                   -e TZ=Asia/Jakarta \
                   $FULL_IMAGE
-
-                echo "Connecting to network..."
-                docker network inspect $DOCKER_NETWORK >/dev/null 2>&1 || docker network create $DOCKER_NETWORK
-                docker network connect $DOCKER_NETWORK $APP_NAME 2>/dev/null || true
                 '''
             }
         }
 
-        stage('Show Container Status') {
+        stage('Health Check') {
             steps {
                 sh '''
-                echo "Container status:"
-                docker ps | grep $APP_NAME || true
+                echo "Waiting container to start..."
+                sleep 5
+
+                docker ps | grep $APP_NAME
                 '''
             }
         }
@@ -84,10 +114,10 @@ pipeline {
 
     post {
         success {
-            echo '✅ Deploy sukses 🚀'
+            echo '✅ Deploy sukses - Data tetap aman 🚀'
         }
         failure {
-            echo '❌ Deploy gagal'
+            echo '❌ Deploy gagal - cek log Jenkins'
         }
         always {
             echo 'Pipeline completed.'
