@@ -142,7 +142,7 @@ async def register_person(
     face_folder = None
 
     for folder in os.listdir("face_library"):
-        if folder.startswith(fdid + "_"):
+        if folder.startswith(fdid):
             face_folder = folder
             break
 
@@ -174,7 +174,7 @@ async def register_person(
 
     # ================= SIMPAN FOTO =================
     image_bytes = await file.read()
-    file_path = os.path.join(folder_path, f"{fpid}_{name}.jpg")
+    file_path = os.path.join(folder_path, f"{fpid}.jpg")
 
     with open(file_path, "wb") as f:
         f.write(image_bytes)
@@ -312,12 +312,12 @@ async def get_persons_all(request: Request):
 
         # Cari folder berdasarkan FDID
         for folder in os.listdir(FACE_LIB_PATH):
-            if folder.startswith(fdid + "_"):
+            if folder.startswith(fdid ):
 
                 folder_path = os.path.join(FACE_LIB_PATH, folder)
 
                 for filename in os.listdir(folder_path):
-                    if filename.startswith(f"{fpid}_"):
+                    if filename.startswith(f"{fpid}"):
                         image_url = f"{base_url}/face_library/{folder}/{filename}"
                         break
         logger.info(f"Retrieved person: {name} with FPID: {fpid} in FDID: {fdid} | Image URL: {image_url}")
@@ -358,6 +358,7 @@ def get_list_persons_by_fdid(fdid: str):
             status_code=404,
             detail="No persons found for this FDID"
         )
+    
     logger.info(f"Total persons found for FDID {fdid}: {len(persons)}")
     return {
         "fdid": fdid,
@@ -366,23 +367,54 @@ def get_list_persons_by_fdid(fdid: str):
     }
 
 @app.get("/persons/by-fpid/{fpid}")
-async def get_person_by_fpid(fpid: str):
+async def get_person_by_fpid(fpid: str, request: Request):
 
     db = load_db()
+    
+    scheme = request.url.scheme
+    host = request.headers.get("host")
+    base_url = f"{scheme}://{host}"
 
     for name, data in db.items():
         if data.get("fpid") == fpid:
-            logger.info(f"Found person: {name} with FPID: {fpid} in FDID: {data.get('fdid')}")
-            return {
-                "name": name,
-                "fpid": fpid,
-                "embedding_count": len(data.get("embeddings", []))
-            }
+            # for filename in os.listdir(folder_path):
+            #         if filename.startswith(f"{fpid}"):
+            #             image_url = f"{base_url}/face_library/{folder}/{filename}"
+            #             break    
+            for folder in os.listdir(FACE_LIB_PATH):
+
+                folder_path = os.path.join(FACE_LIB_PATH, folder)
+
+                if not os.path.isdir(folder_path):
+                    continue
+
+                _, fdid_name = folder.split("_", 1)
+
+                if os.path.isdir(folder_path) and "_" in folder:
+                    logger.info(f"Found person: {name} with FPID: {fpid} in FDID: {data.get('fdid')}")
+                    return {
+                        "name": name,
+                        "fpid": fpid,
+                        "embedding_count": len(data.get("embeddings", [])),
+                        "image_url": f"{base_url}/face_library/{data.get('fdid')}_{fdid_name}/{fpid}.jpg"
+                    }
+    # for folder in os.listdir(FACE_LIB_PATH):
+    #         if folder.startswith(fpid):
+
+    #             folder_path = os.path.join(FACE_LIB_PATH, folder)
+
+    #             for filename in os.listdir(folder_path):
+    #                 if filename.startswith(f"{fpid}"):
+    #                     image_url = f"{base_url}/face_library/{folder}/{filename}"
+    #                     break    
+               
+
     logger.warning(f"Person not found with FPID: {fpid}")
     return {
         "status": "error",
         "message": "person not found",
-        "fpid": fpid
+        "fpid": fpid,
+        "image_url": image_url
     }
 
 #================== EDIT PERSON =================
@@ -467,16 +499,16 @@ async def edit_person(
         # ================= HAPUS FILE LAMA BERDASARKAN FPID =================
         for folder in os.listdir(FACE_LIB_PATH):
 
-            if folder.startswith(db[target_name]["fdid"] + "_"):
+            if folder.startswith(db[target_name]["fdid"]):
 
                 folder_path = os.path.join(FACE_LIB_PATH, folder)
 
                 for filename in os.listdir(folder_path):
                     if filename.startswith(f"{fpid}_"):
-                        os.remove(os.path.join(folder_path, filename))
+                        os.remove(os.path.join(folder_path))
 
                 # Simpan file baru
-                new_path = os.path.join(folder_path, f"{fpid}_{target_name}.jpg")
+                new_path = os.path.join(folder_path, f"{fpid}.jpg")
 
                 with open(new_path, "wb") as f:
                     f.write(image_bytes)
@@ -492,11 +524,11 @@ async def edit_person(
                 folder_path = os.path.join(FACE_LIB_PATH, folder)
 
                 for filename in os.listdir(folder_path):
-                    if filename.startswith(f"{fpid}_"):
+                    if filename.startswith(f"{fpid}"):
 
-                        old_path = os.path.join(folder_path, filename)
-                        new_filename = f"{fpid}_{target_name}.jpg"
-                        new_path = os.path.join(folder_path, new_filename)
+                        old_path = os.path.join(folder_path)
+                        new_filename = f"{fpid}.jpg"
+                        new_path = os.path.join(folder_path)
 
                         # Rename tanpa hapus file
                         os.rename(old_path, new_path)
