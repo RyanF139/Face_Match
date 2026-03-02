@@ -5,3 +5,6 @@ face_library
 models
 db.json
 __pycache__
+images_checker
+Example
+images_checker.py

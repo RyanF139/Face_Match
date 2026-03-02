@@ -276,14 +276,17 @@ async def recognize(file: UploadFile = File(...)):
 
     # tidak ada match yang memenuhi threshold
     logger.info(f"Recognition no match | Best Score: {best_score:.4f} | Similarity: {percentage:.2f}% | Threshold: {THRESHOLD:.4f}")
-    return {
-        "status": "no_match",
-        "message": "No matching face found in the database",
-        "cosine_score": round(best_score, 4),
-        "similarity_percent": round(percentage, 2),
-        "threshold_cosine": THRESHOLD,
-        "threshold_percent": round(threshold_percent, 2)
-    }
+    raise HTTPException(
+        status_code=404,
+        detail={
+            "status": "no_match",
+            "message": "No matching face found in the database",
+            "cosine_score": round(best_score, 4),
+            "similarity_percent": round(percentage, 2),
+            "threshold_cosine": THRESHOLD,
+            "threshold_percent": round(threshold_percent, 2)
+        }
+    )
 
 @app.get("/persons")
 async def get_persons_all(request: Request):
@@ -327,7 +330,6 @@ async def get_persons_all(request: Request):
             "fdid": fdid,
             "image_url": image_url
         })
-
     return {
         "total": len(persons),
         "persons": persons
@@ -398,6 +400,14 @@ async def get_person_by_fpid(fpid: str, request: Request):
                         "embedding_count": len(data.get("embeddings", [])),
                         "image_url": f"{base_url}/face_library/{data.get('fdid')}_{fdid_name}/{fpid}.jpg"
                     }
+                else:
+                    logger.info(f"Found person: {name} with FPID: {fpid} in FDID: {data.get('fdid')} but image file not found")
+                    return {
+                        "name": name,
+                        "fpid": fpid,
+                        "embedding_count": len(data.get("embeddings", [])),
+                        "image_url": None
+                    }
     # for folder in os.listdir(FACE_LIB_PATH):
     #         if folder.startswith(fpid):
 
@@ -408,14 +418,6 @@ async def get_person_by_fpid(fpid: str, request: Request):
     #                     image_url = f"{base_url}/face_library/{folder}/{filename}"
     #                     break    
                
-
-    logger.warning(f"Person not found with FPID: {fpid}")
-    return {
-        "status": "error",
-        "message": "person not found",
-        "fpid": fpid,
-        "image_url": image_url
-    }
 
 #================== EDIT PERSON =================
 @app.put("/persons/{fpid}")
