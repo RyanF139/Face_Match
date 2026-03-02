@@ -237,9 +237,8 @@ async def recognize(file: UploadFile = File(...)):
     try:
         emb = get_embedding(image_bytes)
     except ValueError as e:
-        # ji
         logger.error(f"Recognition error: {str(e)}")
-        return {"status": "error", "message": str(e)}
+        raise HTTPException(status_code=400, detail={"status": "error", "message": str(e)})
 
     best_match = None
     best_score = -1
