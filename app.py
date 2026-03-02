@@ -120,23 +120,23 @@ async def register_person(
 
     if not name:
         logger.warning("Attempted registration with Name is required.")
-        return {"status": "error", "message": "Name is required"}
+        raise HTTPException(status_code=400, detail="Name is required")
 
     if not fdid:
         logger.warning("Attempted registration with FDID is required.")
-        return {"status": "error", "message": "FDID is required"}
+        raise HTTPException(status_code=400, detail="FDID is required")
 
     db = load_db()
 
-    # ================= VALIDASI NAMA =================
-    if name in db:
-        logger.warning(f"Attempted registration with duplicate name: {name}")
-        return {
-            "status": "error",
-            "message": "person already registered",
-            "name": name,
-            "fpid": db[name]["fpid"]
-        }
+    # # ================= VALIDASI NAMA =================
+    # if name in db:
+    #     logger.warning(f"Attempted registration with duplicate name: {name}")
+    #     return {
+    #         "status": "error",
+    #         "message": "person already registered",
+    #         "name": name,
+    #         "fpid": db[name]["fpid"]
+    #     }
 
     # ================= CEK FOLDER FDID =================
     face_folder = None
@@ -185,12 +185,13 @@ async def register_person(
 
     if img is None:
         logger.error("Image decode failed during registration")
-        return {"error": "Image decode failed"}
+        raise HTTPException(status_code=400, detail="Image decode failed")
+        
 
     faces = model.get(img)
     if len(faces) == 0:
         logger.error("No face detected during registration")
-        return {"error": "No face detected"}
+        raise HTTPException(status_code=400, detail="No face detected")
 
     embeddings = [faces[0].embedding]
 
@@ -222,14 +223,21 @@ async def recognize(file: UploadFile = File(...)):
     db = load_db()
     if len(db) == 0:
         logger.warning("Recognition attempt with empty database")
-        return {"status": "error", "message": "Database empty"}
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "status": "error", 
+                "message": "Database empty"
+                }
+            )
+        
 
     image_bytes = await file.read()
 
     try:
         emb = get_embedding(image_bytes)
     except ValueError as e:
-        # jika gambar tidak ada wajah
+        # ji
         logger.error(f"Recognition error: {str(e)}")
         return {"status": "error", "message": str(e)}
 
